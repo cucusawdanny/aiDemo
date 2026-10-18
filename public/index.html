@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>九路棋盤</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#e9eeee;--ink:#1d2b2e;--sq1:#c9d8d6;--sq2:#8fa9a6;--panel:#f6f9f9;--line:#b5c5c3;--sel:#e0a526}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10181a;--ink:#dbe6e5;--sq1:#41585a;--sq2:#2c4042;--panel:#182527;--line:#32484a}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;display:flex;flex-wrap:wrap;gap:16px;justify-content:center;padding:16px}
+#board{--cell:min(10.2vw,64px);display:grid;grid-template-columns:repeat(9,var(--cell));grid-auto-rows:var(--cell);width:max-content;height:max-content;flex:none;border:2px solid var(--ink)}
+.sq{width:var(--cell);height:var(--cell);box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}
+.sq.d{background:var(--sq2)}.sq.l{background:var(--sq1)}
+.sq.sel{outline:3px solid var(--sel);outline-offset:-3px}
+.sq.mv::after{content:"";position:absolute;width:26%;height:26%;border-radius:50%;background:var(--sel)}
+.sq.ban::after{background:#c0392b!important;border-radius:2px!important;width:34%!important;height:34%!important}
+.sq.cap{box-shadow:inset 0 0 0 4px #c0392b}
+.sq .c{position:absolute;left:3px;top:1px;font-size:10px;opacity:.55}
+.sq img{width:88%;height:88%;object-fit:contain;display:block;pointer-events:none}
+aside{width:min(92vw,300px);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;font-size:14px;line-height:1.7;align-self:flex-start}
+#turn{font-weight:700}
+#panel{min-height:1.7em;margin:4px 0}
+button{margin:4px 6px 0 0;padding:4px 12px;border:1px solid var(--ink);background:none;color:inherit;border-radius:6px;cursor:pointer}
+label{display:block;font-size:13px}
+.tag{display:inline-block;border:1px solid var(--ink);border-radius:10px;padding:0 8px;margin:2px 4px 2px 0;font-size:12px}
+code{font-size:12px}
+#hist{max-height:170px;overflow:auto;font-size:12px;border-top:1px solid var(--line);margin-top:8px;padding-top:6px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;width:min(92vw,360px);align-self:flex-start}
+input[type=text],input[type=password],input:not([type]){display:block;width:100%;box-sizing:border-box;margin:4px 0 8px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
+h2,h3{margin:8px 0 4px}h3{font-size:15px}
+.err{color:#c0392b;min-height:1.4em;font-size:13px}
+.sm{font-size:12px;opacity:.7;margin:0}
+.room{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);cursor:pointer;font-size:14px}
+#game{display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
+[hidden]{display:none!important}
+aside{font-size:16px}
+#hist{font-size:13px}
+.banner{background:var(--ink);color:var(--bg);font-size:20px;font-weight:700;padding:10px 12px;border-radius:6px;margin:6px 0;line-height:1.4}
+.banner.me{background:var(--sel);color:#1d2b2e}
+.banner .warn{background:#c0392b;color:#fff;padding:2px 8px;border-radius:4px;margin-top:6px;font-size:16px}
+</style>
+</head>
+<body>
+<div id="conn" class="sm" style="position:fixed;top:4px;left:8px"></div>
+<div id="login" class="card">
+  <h2>九路棋盤</h2>
+  <input id="idin" maxlength="16" placeholder="玩家 ID（固定使用）">
+  <button id="idgo">進入大廳</button>
+  <div id="err0" class="err"></div>
+  <p class="sm" id="idnote">ID 第一次登記後會綁定這個瀏覽器，別人無法冒用；換瀏覽器或清除瀏覽資料後，就無法取回這個 ID。</p>
+</div>
+<div id="lobby" class="card" hidden>
+  <div>玩家：<b id="who"></b></div>
+  <h3>開啟房間</h3>
+  <input id="rn" maxlength="20" placeholder="房間名稱">
+  <input id="rp" type="password" placeholder="密碼（留空＝不上鎖）">
+  <button id="mkbtn">開啟房間</button>
+  <h3>加入房間</h3>
+  <input id="jn" maxlength="20" placeholder="房間名稱（可點下方列表帶入）">
+  <input id="jp" type="password" placeholder="密碼（上鎖的房間才需要）">
+  <button id="jnbtn">加入房間</button>
+  <div id="err1" class="err"></div>
+  <h3>房間列表</h3>
+  <div id="rooms"></div>
+</div>
+<div id="game" hidden>
+  <div id="wait" class="card" hidden>等待對手加入…<br><span class="sm">對手進房後會隨機分配黑白方並開始。</span></div>
+  <div id="board"></div>
+  <aside>
+    <div id="hdr"></div>
+    <div id="turn" class="banner" hidden></div>
+    <div id="clk" style="font-size:13px;margin:4px 0"></div>
+    <div id="result" style="font-size:13px"></div>
+    <div id="panel"></div>
+    <button id="resign" hidden>投降</button><button id="leave">離開房間</button>
+    <div id="info">點選自己的棋子，會標出可走的格子。</div>
+    <div id="hist"></div>
+  </aside>
+</div>
+<script src="/rules.js"></script>
+<script>
+// ===== 連線版網頁端：畫面 + WebSocket；所有規則由伺服器驗證 =====
+const TYPES = Rules.TYPES, SIZE = Rules.SIZE, N = Rules.N;
+const $ = id => document.getElementById(id), files = 'abcdefghi';
+const S = s => s==='w' ? '白方' : '黑方', sq = o => files[o.x] + (SIZE-o.y);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SUF = new URLSearchParams(location.search).get('p') || '';   // ?p=2 可在同一瀏覽器模擬第二位玩家
+const store = {get:k=>{ try{ return localStorage.getItem(k+SUF); }catch(e){ return null; } }, set:(k,v)=>{ try{ localStorage.setItem(k+SUF,v); }catch(e){} }};
+const phc = {};
+let banned = [], skew = 0, ws = null, fatal = false, name = store.get('pid') || '', G = null, room = null, mySide = null, selected = null, moves = [];
+function placeholder(label, side){
+  const f = side==='w' ? '#f3efe4' : '#27363a', k = side==='w' ? '#27363a' : '#f3efe4', n = label.length;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="${f}" stroke="${k}" stroke-width="4"/><circle cx="50" cy="50" r="38" fill="none" stroke="${k}" stroke-width="1.5"/><text x="50" y="${n>1?60:66}" font-size="${n>2?26:n>1?34:48}" text-anchor="middle" font-family="serif" fill="${k}">${label}</text></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+const img = p => { const t = TYPES[p.type]; return t.image || phc[t.label+p.side] || (phc[t.label+p.side] = placeholder(t.label, p.side)); };
+const pieceAt = (x,y) => G.pieces.find(p => p.x===x && p.y===y);
+const send = o => { if(ws && ws.readyState===1) ws.send(JSON.stringify(o)); };
+const err = (id,t) => $(id).textContent = t || '';
+function key(){
+  let k = store.get('pkey');
+  if(!k){ k = [...crypto.getRandomValues(new Uint8Array(24))].map(b=>b.toString(16).padStart(2,'0')).join(''); store.set('pkey', k); }
+  return k;
+}
+function show(which){ ['login','lobby','game'].forEach(s => $(s).hidden = s!==which); }
+function connect(){
+  ws = new WebSocket((location.protocol==='https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => { $('conn').textContent = ''; if(name) send({t:'hello', id:name, key:key()}); };
+  ws.onmessage = e => on(JSON.parse(e.data));
+  ws.onclose = () => { if(fatal) return; $('conn').textContent = '連線中斷，重新連線中…'; setTimeout(connect, 1500); };
+}
+function on(m){
+  if(m.t==='hello_ok'){ name = m.name; store.set('pid', name); $('who').textContent = name; err('err0'); if($('game').hidden) show('lobby'); }
+  else if(m.t==='rooms'){ renderRooms(m.list); show('lobby'); }
+  else if(m.t==='room'){ room = m.room; G = m.state; skew = (m.now || Date.now()) - Date.now(); mySide = room.you; selected = null; moves = []; banned = []; show('game'); render(); }
+  else if(m.t==='left'){ room = null; G = null; show('lobby'); }
+  else if(m.t==='error'){
+    if(m.fatal){ fatal = true; show('login'); err('err0', m.msg); try{ ws.close(); }catch(e){} }
+    else if(!$('game').hidden) $('info').textContent = m.msg; else err('err1', m.msg);
+  }
+}
+function renderRooms(list){
+  const box = $('rooms'); box.innerHTML = '';
+  if(!list.length){ box.textContent = '目前沒有等待中的房間'; return; }
+  list.forEach(d => { const r = document.createElement('div'); r.className = 'room';
+    r.innerHTML = d.bot ? `<span>🤖 ${esc(d.name)}</span><span>空位・挑戰${d.bot==='advanced' ? '進階' : '中等'}AI</span>` : `<span>${d.locked ? '🔒 ' : ''}${esc(d.name)}（${esc(d.host)}）</span><span>等待中</span>`;
+    r.onclick = () => { $('jn').value = d.name; $('jp').focus(); }; box.appendChild(r); });
+}
+const tagsOf = p => [S(p.side), ...TYPES[p.type].tags, ...(p.fresh ? ['剛復活'] : [])];
+const showInfo = p => $('info').innerHTML = `<div><b>${esc(N(p))}</b> <code>${p.id}</code></div><div>位置：${sq(p)}</div><div>${tagsOf(p).map(t=>`<span class="tag">${t}</span>`).join('')}</div>`;
+const canAct = () => room && room.status==='playing' && mySide && !G.over && (G.phase ? G.phase.side===mySide : G.turn===mySide);
+function click(x,y){
+  const q = pieceAt(x,y);
+  if(!canAct()){ if(q) showInfo(q); return; }
+  if(G.phase){ if(G.phase.kind==='place' && !q) send({t:'place', x, y}); return; }
+  if(selected && moves.some(m => m.x===x && m.y===y)){ const s = selected; selected = null; moves = []; banned = []; send({t:'move', pid:s.id, x, y}); return render(); }
+  if(q && q===selected){ selected = null; moves = []; }
+  else if(q && q.side===mySide){
+    if(Rules.frozen(G, q.id)){ selected = null; moves = []; $('info').textContent = '該棋子被冰凍，無法移動！'; }
+    else { selected = q; moves = Rules.moves(G, q.id); banned = []; try{ banned = moves.filter(m => Rules.wouldLoseByRepeat(G, mySide, {t:'move', pid:q.id, x:m.x, y:m.y})); }catch(e){}
+      showInfo(q); if(banned.length) $('info').innerHTML += '<div style="color:#c0392b">⚠ 紅色標記的格子：走了會因重複局面（長將／長殺／長捉）判負，請變著</div>'; } }
+  else { selected = null; moves = []; if(q) showInfo(q); }
+  render();
+}
+function banner(){   // 反白的大型狀態列：輪到誰、等待誰
+  const el = $('turn'); if(!room || !G || room.status!=='playing'){ el.hidden = true; return; } el.hidden = false;
+  if(G.over){ el.className = 'banner'; el.innerHTML = `<div>${G.over==='draw' ? '和局' : S(G.over) + '獲勝' + (G.over===mySide ? '（你贏了）' : '')}</div>`; return; }
+  const ph = G.phase, who = ph ? ph.side : G.turn, mine = who===mySide, chk = !ph && Rules.check(G, G.turn);
+  const act = ph ? {slash:'斬擊確認', pick:'選擇復活的棋子', place:'放置復活的棋子'}[ph.kind] : '下棋';
+  el.className = 'banner' + (mine ? ' me' : '');
+  el.innerHTML = `<div>${mine ? '輪到你：' + S(who) + '・' + act : '等待 ' + S(who) + ' ' + act + '…'}</div>` + (chk ? `<div class="warn">⚠ ${G.turn===mySide ? '你的王受威脅（不強制解除）' : S(G.turn) + '的王受威脅'}</div>` : '');
+}
+function panelUI(){
+  const p = $('panel'); p.innerHTML = ''; const ph = G.phase;
+  const add = (t,f) => { const b = document.createElement('button'); b.textContent = t; b.onclick = f; p.appendChild(b); };
+  if(G.over || !ph || room.status!=='playing') return;
+  if(ph.side!==mySide){ p.textContent = `等待${S(ph.side)}操作…`; return; }
+  if(ph.kind==='slash'){ const t = G.pieces.find(o => o.id===ph.tid);
+    p.append(`是否發動斬擊？目標：${t ? S(t.side)+N(t)+'（'+sq(t)+'）' : ''}`); add('斬擊',()=>send({t:'slash',yes:true})); add('不斬擊',()=>send({t:'slash',yes:false})); }
+  else if(ph.kind==='pick'){ p.append('選擇復活的棋子'); ph.cands.forEach(ty => add(TYPES[ty].name, ()=>send({t:'pick', ty}))); }
+  else p.textContent = `請點選空格，放置 ${TYPES[ph.ty].name}`;
+}
+function render(){
+  if(!room || !G) return;
+  const playing = room.status==='playing', s = room.sides, pm = G.phase && G.phase.kind==='place' && G.phase.side===mySide;
+  $('wait').hidden = playing; $('board').hidden = !playing; $('resign').hidden = !(playing && !G.over && mySide);
+  const off = x => s && room.online && !room.online[x] ? '（離線）' : '';
+  $('hdr').innerHTML = `房間「${esc(room.name)}」${room.locked ? ' 🔒' : ''}` + (s ? `<br>白方：${esc(s.w.name)}${off('w')}<br>黑方：${esc(s.b.name)}${off('b')}<br>你是：<b>${mySide ? S(mySide) : '旁觀'}</b>` : '');
+  banner();
+  panelUI();
+  const flip = mySide==='b', B = $('board'); B.innerHTML = '';
+  for(let j=0;j<SIZE;j++) for(let i=0;i<SIZE;i++){
+    const x = flip ? SIZE-1-i : i, y = flip ? SIZE-1-j : j, q = pieceAt(x,y), mv = pm ? !q : moves.some(m => m.x===x && m.y===y);
+    const e = document.createElement('div');
+    e.className = 'sq ' + ((x+y)%2 ? 'd':'l') + (selected && selected.x===x && selected.y===y ? ' sel':'') + (mv ? (q ? ' cap':' mv') : '') + (mv && banned.some(m => m.x===x && m.y===y) ? ' ban' : '');
+    if(j===SIZE-1) e.insertAdjacentHTML('beforeend', `<span class="c" style="top:auto;bottom:1px;left:auto;right:3px">${files[x]}</span>`);
+    if(i===0) e.insertAdjacentHTML('beforeend', `<span class="c">${SIZE-y}</span>`);
+    if(q){ const im = new Image(); im.src = img(q); im.alt = q.id; e.appendChild(im); }
+    e.onclick = () => click(x,y);
+    B.appendChild(e);
+  }
+  $('hist').innerHTML = G.hist.map(h => `<div>${esc(h)}</div>`).join(''); $('hist').scrollTop = 1e6;
+}
+function fmt(ms){ const s = Math.ceil(ms/1000); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); }
+function tickClock(){
+  if(!room || !G || !G.clock || room.status!=='playing'){ $('clk').innerHTML = ''; $('result').innerHTML = ''; return; }
+  const v = Rules.clockView(G, Date.now() + skew);
+  $('clk').innerHTML = ['w','b'].map(s => { const on = !G.over && G.clock.active===s;
+    return `<div style="font-size:18px;${on ? 'font-weight:700' : 'opacity:.65'}">${S(s)}${s===mySide ? '（你）' : ''}：${on ? '每手 ' + Math.ceil(v.move/1000) + ' 秒' + (v.limit < G.clock.moveMs ? '（殘局）' : '') + '｜' : ''}自由 ${fmt(v.free[s])}</div>`; }).join('');
+  const r = G.result;
+  const why = r && ({time:`⏱ ${S(r.loser)}自由時間用完`, repeat: r.loser ? `🔁 ${S(r.loser)}${r.label}（禁止著法）不變著，判負` : '🔁 同一局面重複 3 次，和局', nomoves:'雙方皆無棋可走，依分數判定', resign:`🏳 ${S(r.loser)}投降`}[r.reason]);
+  $('result').innerHTML = r ? `<div>${why}</div>` + (r.total ? ['w','b'].map(s => `<div>${S(s)}：棋子 ${r.pieces[s]} 分 + 加分 ${r.bonus[s]} = <b>${r.total[s]}</b></div>`).join('') : '') : '';
+}
+setInterval(tickClock, 200);
+$('idin').value = name;
+$('idgo').onclick = () => { name = $('idin').value.trim().slice(0,16); if(!name) return err('err0','請輸入 ID'); fatal = false; err('err0');
+  if(ws && ws.readyState===1) send({t:'hello', id:name, key:key()}); else connect(); };
+$('mkbtn').onclick = () => { err('err1'); send({t:'create', name:$('rn').value, pw:$('rp').value}); };
+$('jnbtn').onclick = () => { err('err1'); send({t:'join', name:$('jn').value, pw:$('jp').value}); };
+let rsT = 0;
+$('resign').onclick = () => { const b = $('resign');   // 兩段式確認，避免誤按
+  if(b.dataset.arm){ delete b.dataset.arm; b.textContent = '投降'; clearTimeout(rsT); send({t:'resign'}); }
+  else { b.dataset.arm = '1'; b.textContent = '再按一次確認投降'; rsT = setTimeout(() => { delete b.dataset.arm; b.textContent = '投降'; }, 3000); } };
+$('leave').onclick = () => send({t:'leave'});
+if(name) connect();
+</script>
+</body>
+</html>
