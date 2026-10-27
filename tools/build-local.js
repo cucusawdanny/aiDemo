@@ -10,7 +10,7 @@ const fs = require('fs'), path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.resolve(process.argv[2] || path.join(ROOT, 'local-test.html'));
-const TPL = path.join(__dirname, 'local-ui.html');
+const TPL = path.join(__dirname, 'local-ui.html.tpl');
 
 // 打包順序＝相依順序；key 是 require() 解析後的名字
 const MODULES = [
