@@ -39,10 +39,31 @@ aside{font-size:16px}
 .banner{background:var(--ink);color:var(--bg);font-size:20px;font-weight:700;padding:10px 12px;border-radius:6px;margin:6px 0;line-height:1.4}
 .banner.me{background:var(--sel);color:#1d2b2e}
 .banner .warn{background:#c0392b;color:#fff;padding:2px 8px;border-radius:4px;margin-top:6px;font-size:16px}
+#nav{flex-basis:100%;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+#nav button{margin:0;padding:6px 14px;font-size:15px}
+button.on{background:var(--ink);color:var(--bg)}
+.pane{width:min(96vw,980px)}
+.pane h2{margin:4px 0 8px}
+.bd{--cell:min(10.2vw,64px);display:grid;grid-template-columns:repeat(9,var(--cell));grid-auto-rows:var(--cell);width:max-content;height:max-content;flex:none;border:2px solid var(--ink)}
+.bd.sm{--cell:min(9.4vw,48px)}
+.bd .sq.last{box-shadow:inset 0 0 0 3px #3a7bd5}
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+.bar button,.bar select{margin:0}
+select{padding:4px 8px;border:1px solid var(--ink);background:var(--bg);color:var(--ink);border-radius:6px;font:inherit}
+.row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.row .side{flex:1;min-width:min(92vw,280px);max-width:420px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:6px 0;font-size:14px;line-height:1.6;min-height:2.4em}
+.gcard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:8px 0;cursor:pointer}
+.gcard p{margin:6px 0;cursor:auto}
+#rplog{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:13px}
+#rplog .lg{padding:2px 4px;cursor:pointer;border-radius:4px}#rplog .lg.on{background:var(--sel);color:#1d2b2e}
+table{border-collapse:collapse;font-size:14px}th,td{border:1px solid var(--line);padding:4px 10px;text-align:center}
+#learn p,#learn li{line-height:1.7}
 </style>
 </head>
 <body>
 <div id="conn" class="sm" style="position:fixed;top:4px;left:8px"></div>
+<nav id="nav"><button data-tab="play" class="on">🎮 對弈</button><button data-tab="puzzles">🧩 題庫</button><button data-tab="replays">🏆 高手對決</button><button data-tab="learn">📚 教學</button></nav>
 <div id="login" class="card">
   <h2>九路棋盤</h2>
   <input id="idin" maxlength="16" placeholder="玩家 ID（固定使用）">
@@ -78,6 +99,9 @@ aside{font-size:16px}
     <div id="hist"></div>
   </aside>
 </div>
+<div id="puzzles" class="pane" hidden></div>
+<div id="replays" class="pane" hidden></div>
+<div id="learn" class="pane" hidden></div>
 <script src="/rules.js"></script>
 <script>
 // ===== 連線版網頁端：畫面 + WebSocket；所有規則由伺服器驗證 =====
@@ -103,7 +127,12 @@ function key(){
   if(!k){ k = [...crypto.getRandomValues(new Uint8Array(24))].map(b=>b.toString(16).padStart(2,'0')).join(''); store.set('pkey', k); }
   return k;
 }
-function show(which){ ['login','lobby','game'].forEach(s => $(s).hidden = s!==which); }
+let curPlay = 'login', tab = 'play';
+function show(which){ curPlay = which; ['login','lobby','game'].forEach(s => $(s).hidden = tab!=='play' || s!==which); }
+function setTab(t){ tab = t; document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab===t));
+  ['login','lobby','game'].forEach(s => $(s).hidden = t!=='play' || s!==curPlay); ['puzzles','replays','learn'].forEach(s => $(s).hidden = s!==t);
+  if(t!=='play' && window.Learn) Learn.open(t); }
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 function connect(){
   ws = new WebSocket((location.protocol==='https:' ? 'wss://' : 'ws://') + location.host);
   ws.onopen = () => { $('conn').textContent = ''; if(name) send({t:'hello', id:name, key:key()}); };
@@ -124,7 +153,7 @@ function renderRooms(list){
   const box = $('rooms'); box.innerHTML = '';
   if(!list.length){ box.textContent = '目前沒有等待中的房間'; return; }
   list.forEach(d => { const r = document.createElement('div'); r.className = 'room';
-    r.innerHTML = d.bot ? `<span>🤖 ${esc(d.name)}</span><span>空位・挑戰${d.bot==='advanced' ? '進階' : '中等'}AI</span>` : `<span>${d.locked ? '🔒 ' : ''}${esc(d.name)}（${esc(d.host)}）</span><span>等待中</span>`;
+    r.innerHTML = d.bot ? `<span>🤖 ${esc(d.name)}</span><span>空位・挑戰${({beginner:'初階', medium:'中等', advanced:'進階', super:'超高階'}[d.bot] || 'AI')}AI</span>` : `<span>${d.locked ? '🔒 ' : ''}${esc(d.name)}（${esc(d.host)}）</span><span>等待中</span>`;
     r.onclick = () => { $('jn').value = d.name; $('jp').focus(); }; box.appendChild(r); });
 }
 const tagsOf = p => [S(p.side), ...TYPES[p.type].tags, ...(p.fresh ? ['剛復活'] : [])];
@@ -205,5 +234,6 @@ $('resign').onclick = () => { const b = $('resign');   // 兩段式確認，避�
 $('leave').onclick = () => send({t:'leave'});
 if(name) connect();
 </script>
+<script src="/learn.js"></script>
 </body>
 </html>

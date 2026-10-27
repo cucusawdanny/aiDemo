@@ -64,7 +64,16 @@ const rnd = a => a[Math.floor(Math.random()*a.length)];
   }
   assert.ok(A.state.hist.some(h => /黑方|白方/.test(h)) && A.state.hist.length >= 5); console.log('✔ AI 練習室：進房、AI 回應、可繼續對弈');
   A.send({t:'leave'}); await A.next('left'); const lb = await A.next('rooms');
-  assert.deepEqual(lb.list.map(r => r.name).sort(), ['中等AI練習室','進階AI練習室'].sort()); console.log('✔ 離開後兩間 AI 房仍在大廳');
+  assert.deepEqual(lb.list.map(r => r.name).sort(), ['初階AI練習室','中等AI練習室','進階AI練習室','超高階AI練習室'].sort()); console.log('✔ 離開後四間 AI 房仍在大廳');
+  // 其餘三款 AI（初階、進階、超高階）也要在房裡回應
+  for (const room of ['初階AI練習室','進階AI練習室','超高階AI練習室']) {
+    A.q.length = 0; A.send({t:'join', name:room}); await A.next('room'); const mine = A.room.you, actor = () => A.state.phase ? A.state.phase.side : A.state.turn;
+    if (actor() === mine) { const G = JSON.parse(JSON.stringify(A.state)), opts = [];
+      G.pieces.filter(p => p.side===mine && !Rules.frozen(G,p.id)).forEach(p => Rules.moves(G,p.id).forEach(m => opts.push({t:'move', pid:p.id, x:m.x, y:m.y}))); A.send(rnd(opts)); }
+    const need = mine === 'w' ? 2 : 1, t0 = Date.now();
+    while (!(A.state.hist.length >= need && actor() === mine)) { if (Date.now() - t0 > 15000) throw new Error(room + ' 的 AI 沒有回應'); await A.next('room', 15000); }
+    console.log(`✔ ${room}：AI 在 ${Date.now() - t0}ms 內回應`); A.send({t:'leave'}); await A.next('left');
+  }
   // 棋鐘：把時間調短（每手 50ms、自由 300ms、無開局緩衝），雙方都不動，白方先超時
   process.env.CHESS_MOVE_MS = '50'; process.env.CHESS_FREE_MS = '300'; process.env.CHESS_GRACE_MS = '0';
   A.q.length = 0; B2.q.length = 0; A.state = null;   // 清掉上一局殘留的訊息

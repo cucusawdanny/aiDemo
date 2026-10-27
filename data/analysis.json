@@ -1,0 +1,266 @@
+{
+ "games": 100,
+ "wins": {
+  "w": 51,
+  "b": 44,
+  "d": 5
+ },
+ "whiteRate": 51,
+ "blackRate": 44,
+ "drawRate": 5,
+ "capped": 98,
+ "kingKills": 2,
+ "avgMoves": 177.3,
+ "avgCapture": 25,
+ "avgSlash": 1.4,
+ "avgChain": 0.1,
+ "avgRevive": 2.8,
+ "avgPromote": 0.6,
+ "avgOtl": 0,
+ "avgMargin": 5.8,
+ "firstCapture": {
+  "n": 100,
+  "winRate": 58.9
+ },
+ "firstSlash": {
+  "n": 61,
+  "winRate": 56.9
+ },
+ "firstCaptureAvgPly": 31,
+ "survival": {
+  "king": {
+   "name": "王",
+   "has": 50.5,
+   "hasN": 198,
+   "no": 0,
+   "noN": 2
+  },
+  "ol": {
+   "name": "OL",
+   "has": 52.2,
+   "hasN": 91,
+   "no": 48.2,
+   "noN": 109
+  },
+  "otl": {
+   "name": "OTL",
+   "has": 0,
+   "hasN": 0,
+   "no": 50,
+   "noN": 200
+  },
+  "kid": {
+   "name": "孩子多",
+   "has": 68.8,
+   "hasN": 16,
+   "no": 48.4,
+   "noN": 184
+  },
+  "iron": {
+   "name": "熨斗",
+   "has": 57.5,
+   "hasN": 73,
+   "no": 45.7,
+   "noN": 127
+  },
+  "shoe": {
+   "name": "鞋子",
+   "has": 52.8,
+   "hasN": 53,
+   "no": 49,
+   "noN": 147
+  },
+  "tea": {
+   "name": "抹茶小紅豆",
+   "has": 60,
+   "hasN": 80,
+   "no": 43.3,
+   "noN": 120
+  },
+  "godness": {
+   "name": "謎之美少女",
+   "has": 50,
+   "hasN": 36,
+   "no": 50,
+   "noN": 164
+  },
+  "night": {
+   "name": "夜王",
+   "has": 61.3,
+   "hasN": 119,
+   "no": 33.3,
+   "noN": 81
+  },
+  "dong": {
+   "name": "咚咚咚咚咚將軍",
+   "has": 53.1,
+   "hasN": 177,
+   "no": 26.1,
+   "noN": 23
+  },
+  "guard": {
+   "name": "量產型戰士",
+   "has": 55.7,
+   "hasN": 114,
+   "no": 42.4,
+   "noN": 86
+  },
+  "t": {
+   "name": "龍",
+   "has": 52.1,
+   "hasN": 143,
+   "no": 44.7,
+   "noN": 57
+  }
+ },
+ "picked": [
+  {
+   "seed": 54,
+   "score": 108,
+   "changes": 16,
+   "range": 22,
+   "comeback": 14,
+   "ev": {
+    "capture": 29,
+    "slash": 4,
+    "chain": 0,
+    "revive": 4,
+    "otl": 0,
+    "promote": 0,
+    "skip": 0,
+    "repeat": 0
+   },
+   "over": "b",
+   "margin": 4
+  },
+  {
+   "seed": 98,
+   "score": 104,
+   "changes": 17,
+   "range": 12,
+   "comeback": 7,
+   "ev": {
+    "capture": 26,
+    "slash": 3,
+    "chain": 0,
+    "revive": 3,
+    "otl": 0,
+    "promote": 1,
+    "skip": 0,
+    "repeat": 0
+   },
+   "over": "b",
+   "margin": 3
+  },
+  {
+   "seed": 59,
+   "score": 103,
+   "changes": 17,
+   "range": 12,
+   "comeback": 7,
+   "ev": {
+    "capture": 28,
+    "slash": 2,
+    "chain": 0,
+    "revive": 4,
+    "otl": 0,
+    "promote": 0,
+    "skip": 0,
+    "repeat": 0
+   },
+   "over": "b",
+   "margin": 3
+  },
+  {
+   "seed": 58,
+   "score": 97,
+   "changes": 14,
+   "range": 18,
+   "comeback": 12,
+   "ev": {
+    "capture": 27,
+    "slash": 1,
+    "chain": 0,
+    "revive": 4,
+    "otl": 0,
+    "promote": 1,
+    "skip": 0,
+    "repeat": 0
+   },
+   "over": "w",
+   "margin": 1
+  },
+  {
+   "seed": 30,
+   "score": 95,
+   "changes": 14,
+   "range": 22,
+   "comeback": 9,
+   "ev": {
+    "capture": 29,
+    "slash": 1,
+    "chain": 0,
+    "revive": 3,
+    "otl": 0,
+    "promote": 0,
+    "skip": 0,
+    "repeat": 0
+   },
+   "over": "w",
+   "margin": 3
+  }
+ ],
+ "learn": {
+  "samples": 3037,
+  "nllPrior": 0.374,
+  "nllLearned": 0.349,
+  "names": [
+   "咚",
+   "OL",
+   "孩",
+   "茶",
+   "夜",
+   "熨",
+   "鞋",
+   "士",
+   "龍",
+   "謎",
+   "OTL",
+   "龍推進",
+   "中心",
+   "近敵王"
+  ],
+  "prior": [
+   10,
+   8,
+   8,
+   7,
+   5,
+   3,
+   3,
+   3,
+   2,
+   3,
+   3,
+   0.08,
+   0.03,
+   0.3
+  ],
+  "learned": [
+   9.94,
+   9.11,
+   12.11,
+   7.81,
+   6.66,
+   3.17,
+   4.31,
+   3.34,
+   2.1,
+   2.58,
+   3,
+   0.35,
+   0.61,
+   -0.24
+  ]
+ }
+}

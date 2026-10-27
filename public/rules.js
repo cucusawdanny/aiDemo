@@ -264,7 +264,7 @@ function settle(G, reason, loser){
   const pieces = {w:pts(G,'w'), b:pts(G,'b')}, total = {w:pieces.w+bonus.w, b:pieces.b+bonus.b};
   G.over = total.w>total.b ? 'w' : total.b>total.w ? 'b' : 'draw'; G.phase = null; G.pending = [];
   G.result = {reason, loser, pieces, bonus, total};
-  const why = {time:`⏱ ${S(loser)}自由時間用完`, nomoves:'雙方皆無棋可走'}[reason];
+  const why = {time:`⏱ ${S(loser)}自由時間用完`, nomoves:'雙方皆無棋可走', cap:'⏱ 到達步數上限（依時限判定）'}[reason];
   G.hist.push(`${why}；白方 ${total.w} 分，黑方 ${total.b} 分` + (G.over==='draw' ? '，和局' : `，${S(G.over)}獲勝`));
 }
 function timeUp(G, now){
@@ -333,12 +333,23 @@ function autoResolve(){   // 搜尋時用：自動處理斬擊／復活步驟
     else { const c = bestCell(phase.side); place(c.x,c.y); }
   }
 }
+// 依指定的棋子清單建立一個局面（題庫、教學圖解用）：list = [[type, side, x, y], ...]
+function custom(list, t){
+  pieces=[]; hist=[]; turn=t||'w'; over=false; pending=[]; phase=null; uid=0; rec=[];
+  list.forEach(([type,side,x,y]) => pieces.push(mk(side,type,x,y)));
+  rec.push({k:posHash(), by:null, mat:matKey(), th:[]});
+  return {pieces,hist,turn,over:false,pending,phase:null,uid,rec};
+}
+// 目前待處理的斬擊／復活步驟，AI 與題庫採用的「最佳自動選擇」（斬擊一律斬；復活選價值最高、放在安全且靠近己王處）
+const autoAction = G => withState(G, () => !phase ? null : phase.kind==='slash' ? {t:'slash', yes:true} : phase.kind==='pick' ? {t:'pick', ty:bestPick()} : (c => ({t:'place', x:c.x, y:c.y}))(bestCell(phase.side)));
+const adjudicate = G => { if (!G.over) settle(G, 'cap', null); };   // 模擬對局到達步數上限時，依分數判定
 function kit(G, fn){
   return withState(G, () => fn({
     pieces: () => pieces, turn: () => turn, over: () => over, phase: () => phase, val, trial, isFrozen, pieceAt, bestPick, bestCell,
+    hash: () => posHash(), king: s => kingOf(s), rec: () => rec,
     moves: s => pieces.filter(p => p.side===s && !isFrozen(p)).flatMap(p => getMoves(p).map(m => ({p,m}))),
     play: (p,m) => { act(p,m); autoResolve(); }   // 只能在 trial() 裡用
   }));
 }
-return {SIZE, TYPES, BACK, FRONT, N, create, moves, frozen, apply, play, check, kit, wouldLoseByRepeat, clockInit, clockView, deadline, timeUp, pts, moveLimit};
+return {SIZE, TYPES, BACK, FRONT, N, create, custom, adjudicate, autoAction, moves, frozen, apply, play, check, kit, wouldLoseByRepeat, clockInit, clockView, deadline, timeUp, pts, moveLimit};
 });
