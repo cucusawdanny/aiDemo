@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/* 產生單一檔案的「本機測試版」網頁：把 rules.js 與 AI 打包進一個 HTML，
+/* 產生單一檔案的「本機測試版」網頁：把 rules.js 與 AI 打包進一個可直接開的 HTML，
    用瀏覽器直接開就能下棋，不需要 node server.js、不連任何伺服器。
 
    node tools/build-local.js [輸出檔名]      預設輸出 local-test.html
