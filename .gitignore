@@ -1,0 +1,7 @@
+node_modules/
+
+# 伺服器執行時產生的玩家註冊資料
+data/players.json
+
+# tools/build-local.js 產生的本機測試頁（用 npm run build-local 重建）
+local-test.html
