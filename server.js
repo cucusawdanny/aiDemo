@@ -2,17 +2,32 @@
 // 九路棋盤連線伺服器：零依賴（只用 Node 內建模組），伺服器端驗證所有走法。
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const Rules = require('./public/rules.js');
-const AI = require('./ai.js');
+const {Worker} = require('worker_threads');   // AI 在 worker 裡思考（ai-worker.js），不卡住主執行緒
+const aiWorkers = {}, aiJobs = new Map(); let aiId = 0;
+function aiThink(level, G, side, budget){
+  return new Promise(res => {
+    try {
+      let w = aiWorkers[level];
+      if (!w) { w = aiWorkers[level] = new Worker(path.join(__dirname, 'ai-worker.js')); w.unref();
+        w.on('message', m => { const f = aiJobs.get(m.id); if (f) { aiJobs.delete(m.id); f(m.list); } });
+        w.on('error', e => { console.error('AI worker 錯誤', e); aiWorkers[level] = null; aiJobs.forEach(f => f([])); aiJobs.clear(); });
+        w.on('exit', () => { if (aiWorkers[level] === w) aiWorkers[level] = null; }); }
+      const id = ++aiId; aiJobs.set(id, res); w.postMessage({id, G, side, level, budget});
+    } catch (e) { console.error(e); res([]); }
+  });
+}
 const PORT = process.env.PORT || 3000;
 const PUB = path.join(__dirname, 'public');
 const DATA = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'players.json');
-// ---------- AI 練習室：大廳固定兩間，各放一款 AI（ID 含控制字元，真人註冊不到）----------
+// ---------- AI 練習室：大廳固定四間，各放一款 AI（初階／中等／進階／超高階；ID 含控制字元，真人註冊不到）----------
 const BOT_DELAY = +process.env.CHESS_BOT_DELAY_MS || 700;   // AI 下棋前停頓，讓人看得到
 const BOTS = {
-  '\u0001medium':   {name: '🤖 中等AI', level: 'medium',   room: '中等AI練習室', ms: 400},
-  '\u0001advanced': {name: '🤖 進階AI', level: 'advanced', room: '進階AI練習室', ms: 1500}
+  '\u0001beginner': {name: '🤖 初階AI',   level: 'beginner', room: '初階AI練習室',   ms: 150},
+  '\u0001medium':   {name: '🤖 中等AI',   level: 'medium',   room: '中等AI練習室',   ms: 400},
+  '\u0001advanced': {name: '🤖 進階AI',   level: 'advanced', room: '進階AI練習室',   ms: 1500},
+  '\u0001super':    {name: '🤖 超高階AI', level: 'super',    room: '超高階AI練習室', ms: 3000}
 };
-const MIME = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.svg':'image/svg+xml','.webp':'image/webp','.gif':'image/gif'};
+const MIME = {'.html':'text/html; charset=utf-8','.json':'application/json; charset=utf-8','.js':'text/javascript; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.svg':'image/svg+xml','.webp':'image/webp','.gif':'image/gif'};
 
 // ---------- 玩家（固定 ID：ID 綁定第一次登記時的金鑰，伺服器只存雜湊）----------
 let players = {}; try { players = JSON.parse(fs.readFileSync(DATA, 'utf8')); } catch (e) {}
@@ -176,10 +191,11 @@ function botTurn(r){
   const side = r.sides.w === r.host ? 'w' : 'b';
   if ((G.phase ? G.phase.side : G.turn) !== side) return;
   const wait = Math.max(BOT_DELAY, G.clock ? G.clock.start - Date.now() : 0);   // 開局緩衝內不搶先
-  r.botTimer = setTimeout(() => {
+  r.botTimer = setTimeout(async () => {
     if (rooms.get(rkey(r.name)) !== r || r.G !== G || G.over) return;
     const avail = Rules.clockView(G, Date.now()).move, budget = Math.max(100, Math.min(r.bot.ms, avail * 0.4));
-    let list = []; try { list = AI.chooseActions(G, side, r.bot.level, {budgetMs: budget}); } catch (e) { console.error(e); }
+    let list = []; try { list = await aiThink(r.bot.level, G, side, budget); } catch (e) { console.error(e); }
+    if (rooms.get(rkey(r.name)) !== r || r.G !== G || G.over) return;   // 思考期間房間可能已重置或對局已結束
     let done = false;
     for (const a of list) { const res = Rules.play(G, side, a, Date.now()); if (res.ok || res.ended) { done = true; break; } }
     if (!done && !G.phase) for (const p of G.pieces.filter(o => o.side === side)) {   // 保底：隨便走一步合法的

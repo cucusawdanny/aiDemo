@@ -4,6 +4,7 @@
    opt.budgetMs：思考時間上限（預設 medium 400ms／advanced 1500ms）；opt.rnd：亂數函式。
    會自動避開「照走就因長將／長殺／長捉而判負」的著法。 */
 const Rules = require('./public/rules.js');
+const {superRank} = require('./ai-super.js');
 const VAL = {king:1000, dong:10, ol:8, kid:8, tea:7, night:5, t:2};
 const v = p => p.type in VAL ? VAL[p.type] : 3;
 const opp = s => s==='w' ? 'b' : 'w';
@@ -41,7 +42,22 @@ function search(k, side, depth, alpha, beta, deadline){
   return best;
 }
 // 回傳依偏好排序的候選著法 [{pid,x,y,v}]
+// 初階：一半的時候亂走，其餘只看一步（吃得到就吃）；偶爾連王被威脅都沒發現
+function rankBeginner(k, side, rnd){
+  const root = k.moves(side); if(!root.length) return [];
+  const scored = root.map(({p,m}) => ({p, m, v: k.trial(() => { k.play(p,m); return evaluate(k, side) + rnd()*1.5; })})).sort((a,b) => b.v - a.v);
+  const first = rnd() < 0.5 ? root.map(({p,m}) => ({p,m,v:0}))[Math.floor(rnd()*root.length)] : scored[Math.floor(rnd()*Math.min(3, scored.length))];
+  return [first, ...scored.filter(s => !(s.p===first.p && s.m===first.m))].map(s => ({pid:s.p.id, x:s.m.x, y:s.m.y, v:s.v}));
+}
 function rank(k, side, level, budget, rnd){
+  if(level==='beginner') return rankBeginner(k, side, rnd);
+  if(level==='super'){
+    const sc = superRank(k, side, budget, rnd, {tol: opt0.tol, maxDepth: opt0.maxDepth, weights: opt0.weights});
+    if(!sc.length) return [];
+    const pool = sc.filter(s => s.v >= sc[0].v - (opt0.tol !== undefined ? opt0.tol : 0.05));
+    const first = pool[Math.floor(rnd()*pool.length)];
+    return [first, ...sc.filter(s => s!==first)].map(s => ({pid:s.p.id, x:s.m.x, y:s.m.y, v:s.v}));
+  }
   const deadline = Date.now() + budget, root = ordered(k, side);
   const maxDepth = level==='advanced' ? 6 : 2;
   let scored = null;
@@ -49,8 +65,9 @@ function rank(k, side, level, budget, rnd){
     const cur = []; let alpha = -Infinity;
     try {
       for(const {p,m} of root){
-        const sc = k.trial(() => { k.play(p,m); return -search(k, opp(side), d-1, -Infinity, level==='advanced' ? -alpha : Infinity, deadline); });
-        cur.push({p,m,v:sc}); if(level==='advanced' && sc>alpha) alpha = sc;
+        // 根節點每一步都用完整視窗搜尋：原本用 -alpha 當視窗時，進階 AI 的所有根著法分數會變成一樣，等於隨機亂走
+        const sc = k.trial(() => { k.play(p,m); return -search(k, opp(side), d-1, -Infinity, Infinity, deadline); });
+        cur.push({p,m,v:sc});
       }
     } catch(e){ if(e!==TIMEOUT) throw e; break; }
     scored = cur.sort((a,b) => b.v - a.v);
@@ -65,9 +82,10 @@ function rank(k, side, level, budget, rnd){
   return [first, ...scored.filter(s => s!==first)].map(s => ({pid:s.p.id, x:s.m.x, y:s.m.y, v:s.v}));
 }
 // 回傳依偏好排序的候選動作陣列（伺服器依序嘗試，第一個被接受的就用；用來應付「禁止著法」等額外限制）
+let opt0 = {};
 function chooseActions(G, side, level='medium', opt={}){
   if(typeof Rules.kit!=='function') throw new Error('rules.js 缺少 Rules.kit（AI 需要）');
-  const rnd = opt.rnd || Math.random, budget = opt.budgetMs || (level==='advanced' ? 1500 : 400);
+  opt0 = opt; const rnd = opt.rnd || Math.random, budget = opt.budgetMs || ({beginner:120, advanced:1500, super:3000}[level] || 400);
   const r = Rules.kit(G, k => {
     const ph = k.phase();
     if(ph){

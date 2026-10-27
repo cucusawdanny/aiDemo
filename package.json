@@ -3,7 +3,16 @@
   "version": "1.0.0",
   "description": "九路棋盤連線版（零依賴 Node.js 伺服器）",
   "main": "server.js",
-  "scripts": { "start": "node server.js", "test": "node test/rules.js && node test/e2e.js" },
-  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/rules.js && node test/ai.js && node test/data.js && node test/e2e.js",
+    "selfplay": "node tools/selfplay.js 100 90 180 data/selfplay.jsonl",
+    "analyze": "node tools/analyze.js data/selfplay.jsonl",
+    "puzzles": "node tools/puzzles.js 280 data/puzzles-raw.jsonl",
+    "build-data": "node tools/build-data.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "license": "UNLICENSED"
 }
