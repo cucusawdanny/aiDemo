@@ -33,9 +33,12 @@ code{font-size:12px}
 .sm{font-size:12px;opacity:.7;margin:6px 0 0}
 hr{border:none;border-top:1px solid var(--line);margin:10px 0}
 .score{display:flex;justify-content:space-between;font-size:14px}
+#fatal{flex-basis:100%;background:#c0392b;color:#fff;padding:14px 16px;border-radius:6px;font-size:15px;line-height:1.6;white-space:pre-wrap}
+#fatal b{font-size:17px}
 </style>
 </head>
 <body>
+<div id="fatal" hidden></div>
 <div id="board"></div>
 <aside>
   <div id="turn" class="banner"></div>
@@ -73,8 +76,24 @@ hr{border:none;border-top:1px solid var(--line);margin:10px 0}
 //__BUNDLE__
 </script>
 <script>
+function __fatal(title, detail){
+  var el = document.getElementById('fatal'); if(!el) return;
+  el.hidden = false; el.innerHTML = '';
+  var b = document.createElement('b'); b.textContent = title; el.appendChild(b);
+  if(detail){ el.appendChild(document.createElement('br')); el.appendChild(document.createTextNode(detail)); }
+}
+window.addEventListener('error', function(e){   // 任何沒接住的錯誤都顯示在畫面上，不要只是靜靜地壞掉
+  __fatal('網頁發生錯誤，棋盤無法啟動', (e.message || e.error) + (e.lineno ? '（第 ' + e.lineno + ' 行）' : ''));
+});
+if(typeof require !== 'function'){
+  __fatal('這個檔案還沒有打包，無法使用',
+    '你開到的是版型檔 tools/local-ui.html，裡面還沒有規則與 AI。\n請先執行 npm run build-local，然後改開專案根目錄的 local-test.html。');
+}
+</script>
+<script>
 (function(){
 'use strict';
+if(typeof require !== 'function') return;   // 上面已經顯示錯誤訊息了
 var Rules = require('./public/rules.js'), AI = require('./ai.js');
 var TYPES = Rules.TYPES, SIZE = Rules.SIZE, N = Rules.N;
 var $ = function(id){ return document.getElementById(id); }, files = 'abcdefghi';
