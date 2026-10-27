@@ -8,6 +8,17 @@
    最簡單的用法（起一台乾淨的伺服器，跑 10 局，印統計）：
      node tools/local-gen.js
 
+   大量模擬請加 --direct：完全跳過伺服器與 WebSocket，直接用 tools/sim.js 在多條執行緒上對弈，
+   快上一個數量級。代價是測不到伺服器那一層（房間、走法驗證、斷線重連、棋鐘），所以：
+     要壓測規則與 AI、要大量對局資料 → --direct
+     要測伺服器本身是否正常          → 不要加 --direct
+     node tools/local-gen.js --direct --games 200 --w super --b advanced
+     node tools/local-gen.js --direct --games 500 --jobs 8 --budget 60 --cap 160
+   --direct 只支援 beginner/medium/advanced/super（random 與 +harvest 需要經過伺服器那條路徑）。
+   --seed 決定每局的開局亂數與雙方策略的抽選，但「不保證重現同一局」：AI 是以時間為上限做迭代加深，
+   機器當下的忙碌程度會改變它算到第幾層，所以同一個 seed 的同一局可能走出不同結果（selfplay.js 也一樣）。
+   要讓結果穩定一點，就把 --budget 調大、--jobs 調小，減少執行緒之間互搶 CPU。
+
    常用：
      node tools/local-gen.js --games 30 --w medium,advanced --b random,medium
      node tools/local-gen.js --mode bot --games 8 --bots beginner,medium --me medium
@@ -22,12 +33,36 @@
    - 跑完會印出勝負分布、各策略對戰成績、平均手數、結束原因等統計。
    其餘參數原封不動轉給 online-gen.js，用 --help 可以看它支援哪些。 */
 const {spawn} = require('child_process'), fs = require('fs'), path = require('path'), net = require('net'), os = require('os');
+const {Worker, isMainThread, workerData, parentPort} = require('worker_threads');
 
 const ROOT = path.join(__dirname, '..');
+
+// ---------- --direct 的 worker：不經過伺服器，直接用 sim.js 把整局在這條執行緒上下完 ----------
+if (!isMainThread && workerData && workerData.direct) {
+  const Rules = require('../public/rules.js'), {playGame} = require('./sim.js');
+  const {seeds, w, b, budget, cap, openTol, openPlies} = workerData;
+  const pick = (a, r) => a[Math.floor(r * a.length) % a.length];
+  for (const seed of seeds) {
+    // 策略與開局亂數由 seed 決定；但 AI 以時間為搜尋上限，所以同一個 seed 不保證走出同一局
+    const r0 = ((seed * 2654435761) % 4294967296) / 4294967296, r1 = ((seed * 1597334677) % 4294967296) / 4294967296;
+    const sw = pick(w, r0), sb = pick(b, r1), t0 = Date.now();
+    let pts = {w: 0, b: 0}, left = {w: 0, b: 0};
+    const g = playGame({seed, w: sw, b: sb, bw: budget, bb: budget, moveCap: cap, openTol, openPlies,
+      onPly: G => { pts = {w: Rules.pts(G, 'w'), b: Rules.pts(G, 'b')};
+        left = {w: G.pieces.filter(p => p.side === 'w').length, b: G.pieces.filter(p => p.side === 'b').length}; }});
+    parentPort.postMessage({          // 欄位對齊 online-gen.js 的紀錄格式，統計與 --report-only 才能共用
+      id: 'd' + seed, run: 'direct', mode: 'direct', seed, t: new Date(t0).toISOString(), ms: Date.now() - t0,
+      white: {id: 'sim-' + sw, strat: sw}, black: {id: 'sim-' + sb, strat: sb}, room: 'direct',
+      over: g.over || null, reason: g.capped ? '步數上限' : (g.reason || 'king'), result: g.result || null,
+      capped: g.capped, moves: g.moves, pts, left, actions: g.actions, log: g.hist});
+  }
+  parentPort.postMessage({done: true});
+  return;
+}
 // 自己手動掃 argv：這支認得的參數吃掉，其餘「原封不動」轉給 online-gen.js。
 // （不能用 parseArgs 的 strict:false 來做，它會把不認得的 --w medium 當成布林旗標＋位置參數，順序就亂了。）
-const TAKES_VALUE = new Set(['port', 'games', 'out', 'bot-delay']);
-const FLAGS = new Set(['test', 'reuse', 'keep-server', 'report-only', 'fresh', 'quiet', 'help']);
+const TAKES_VALUE = new Set(['port', 'games', 'out', 'bot-delay', 'jobs', 'seed']);
+const FLAGS = new Set(['test', 'reuse', 'keep-server', 'report-only', 'fresh', 'quiet', 'help', 'direct']);
 const O = {games: '10', out: 'local-runs/games.jsonl', 'bot-delay': '0'}, REST = [];
 for (const argv = process.argv.slice(2), it = argv[Symbol.iterator](); ; ) {
   const n = it.next(); if (n.done) break;
@@ -113,6 +148,47 @@ function report(file) {
   return tot;
 }
 
+// ---------- --direct：不起伺服器，直接在多條執行緒上跑 sim.js ----------
+const DIRECT_LEVELS = ['beginner', 'medium', 'advanced', 'super'];
+function restVal(flag, dflt) { const i = REST.indexOf('--' + flag); return i >= 0 && REST[i + 1] !== undefined ? REST[i + 1] : dflt; }
+async function runDirect() {
+  const w = String(restVal('w', 'super')).split(','), b = String(restVal('b', 'super')).split(',');
+  const bad = [...w, ...b].filter(s => !DIRECT_LEVELS.includes(s));
+  if (bad.length) { console.error(`--direct 只支援 ${DIRECT_LEVELS.join(' / ')}（不支援 ${[...new Set(bad)].join(', ')}，那些要經過伺服器，請拿掉 --direct）`); process.exit(1); }
+
+  const games = +O.games, cap = +restVal('cap', 180), budget = +restVal('budget', 90);
+  const openTol = +restVal('open-tol', 1.2), openPlies = +restVal('open-plies', 14);
+  const seed0 = +(O.seed || 1);
+  const jobs = Math.max(1, Math.min(+O.jobs || os.cpus().length, games));
+  say(`直接模式：${games} 局、${jobs} 條執行緒、每手 ${budget}ms、步數上限 ${cap}（不起伺服器、不經過 WebSocket）`);
+  say(`白 ${w.join('/')} vs 黑 ${b.join('/')}｜seed ${seed0}…${seed0 + games - 1}\n`);
+
+  const seeds = Array.from({length: games}, (_, i) => seed0 + i);
+  const buckets = Array.from({length: jobs}, () => []);
+  seeds.forEach((s, i) => buckets[i % jobs].push(s));   // 輪流分配，每條執行緒的工作量差不多
+
+  const t0 = Date.now(); let done = 0;
+  const fd = fs.openSync(OUT, 'a');
+  await Promise.all(buckets.map(bucket => new Promise((res, rej) => {
+    const wk = new Worker(__filename, {workerData: {direct: true, seeds: bucket, w, b, budget, cap, openTol, openPlies}});
+    wk.on('message', m => {
+      if (m.done) return;
+      fs.writeSync(fd, JSON.stringify(m) + '\n');
+      done++;
+      if (!O.quiet) {
+        const res2 = m.capped ? `步數上限（白${m.pts.w}:黑${m.pts.b}）` : m.over === 'draw' ? '和局' : (m.over === 'w' ? '白勝' : '黑勝');
+        const rate = done / ((Date.now() - t0) / 1000);
+        say(`[${done}/${games}] ${m.white.strat} vs ${m.black.strat}：${res2}，${m.moves} 手，${(m.ms / 1000).toFixed(1)}s｜${rate.toFixed(2)} 局/秒`);
+      }
+    });
+    wk.on('error', rej);
+    wk.on('exit', c => c === 0 ? res() : rej(new Error('worker 結束碼 ' + c)));
+  })));
+  fs.closeSync(fd);
+  const secs = (Date.now() - t0) / 1000;
+  say(`\n直接模式完成：${done} 局，${secs.toFixed(1)} 秒（${(done / secs).toFixed(2)} 局/秒，平均每局 ${(secs / done).toFixed(2)} 秒）`);
+}
+
 // ---------- 主流程 ----------
 (async () => {
   if (O['report-only']) { report(OUT); return; }
@@ -126,6 +202,8 @@ function report(file) {
 
   if (O.fresh) for (const f of [OUT, OUT.replace(/\.jsonl$/, '') + '.txt']) if (fs.existsSync(f)) fs.unlinkSync(f);
   fs.mkdirSync(path.dirname(OUT), {recursive: true});
+
+  if (O.direct) { await runDirect(); report(OUT); return; }
 
   const port = O.port ? +O.port : await freePort();
   const url = `http://localhost:${port}`;
