@@ -8,6 +8,27 @@
    最簡單的用法（起一台乾淨的伺服器，跑 10 局，印統計）：
      node tools/local-gen.js
 
+   ===== 最常要調的三件事：局數、白方強度、黑方強度 =====
+     --games <數字>   要跑幾局。預設 10。
+     --w <等級>       白方用哪一款 AI。預設 medium。
+     --b <等級>       黑方用哪一款 AI。預設 medium。
+   等級由弱到強：beginner（初階）→ medium（中等）→ advanced（進階）→ super（超高階）
+   另外 random（純亂走）只在不加 --direct 時可用，常用來當對照組。
+
+     node tools/local-gen.js --games 50 --w super --b beginner      # 50 局，超高階執白打初階
+     node tools/local-gen.js --games 20 --w advanced --b advanced   # 20 局，進階互打
+
+   想一次比較多種組合，用逗號分隔，每局會從清單裡各抽一個：
+     node tools/local-gen.js --games 40 --w medium,advanced --b beginner,medium
+   統計會自動把每一種組合分開列出成績。
+
+   其他常調的：
+     --cap <數字>     單局步數上限，超過就算未分勝負。預設 250（--direct 預設 180）。
+     --budget <毫秒>  AI 每一手的思考時間。調大＝棋力強但慢。預設 300（--direct 預設 90）。
+     --out <檔名>     輸出檔位置。預設 local-runs/games.jsonl。
+     --fresh          先清掉舊的輸出檔，不要接在後面。
+   註：上面那份「全部都是 medium vs medium、250 手、10 局」的結果，就是完全沒加參數跑出來的預設值。
+
    大量模擬請加 --direct：完全跳過伺服器與 WebSocket，直接用 tools/sim.js 在多條執行緒上對弈，
    快上一個數量級。代價是測不到伺服器那一層（房間、走法驗證、斷線重連、棋鐘），所以：
      要壓測規則與 AI、要大量對局資料 → --direct
@@ -79,6 +100,7 @@ for (const argv = process.argv.slice(2), it = argv[Symbol.iterator](); ; ) {
 if (O.help) { console.log(fs.readFileSync(__filename, 'utf8').split('*/')[0].replace(/^[\s\S]*?\/\* /, '')); process.exit(0); }
 
 const OUT = path.resolve(ROOT, O.out);
+const TXT = OUT.replace(/\.jsonl$/, '') + '.txt';   // 給人看的棋譜摘要，和 .jsonl 同名
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const say = s => console.log(s);
 
@@ -168,12 +190,20 @@ async function runDirect() {
   seeds.forEach((s, i) => buckets[i % jobs].push(s));   // 輪流分配，每條執行緒的工作量差不多
 
   const t0 = Date.now(); let done = 0;
-  const fd = fs.openSync(OUT, 'a');
+  const fd = fs.openSync(OUT, 'a'), fdTxt = fs.openSync(TXT, 'a');
+  // 棋譜摘要的格式和 online-gen.js 的 save() 一致，兩種模式產出的 .txt 才能互相比對
+  const txtBlock = m => {
+    const res = m.capped ? `步數上限（比分 白${m.pts.w}:黑${m.pts.b}）` : m.over === 'draw' ? '和局'
+      : m.over ? (m.over === 'w' ? '白勝' : '黑勝') + '（' + m.reason + '）' : '中斷';
+    return `=== 對局 ${m.id}｜白：${m.white.strat}（${m.white.id}） vs 黑：${m.black.strat}（${m.black.id}）｜${res}｜${m.moves} 手｜${m.t} ===\n`
+      + (m.log || []).map((l, i) => `${i + 1}. ${l}`).join('\n') + '\n\n';
+  };
   await Promise.all(buckets.map(bucket => new Promise((res, rej) => {
     const wk = new Worker(__filename, {workerData: {direct: true, seeds: bucket, w, b, budget, cap, openTol, openPlies}});
     wk.on('message', m => {
       if (m.done) return;
       fs.writeSync(fd, JSON.stringify(m) + '\n');
+      fs.writeSync(fdTxt, txtBlock(m));
       done++;
       if (!O.quiet) {
         const res2 = m.capped ? `步數上限（白${m.pts.w}:黑${m.pts.b}）` : m.over === 'draw' ? '和局' : (m.over === 'w' ? '白勝' : '黑勝');
@@ -184,7 +214,7 @@ async function runDirect() {
     wk.on('error', rej);
     wk.on('exit', c => c === 0 ? res() : rej(new Error('worker 結束碼 ' + c)));
   })));
-  fs.closeSync(fd);
+  fs.closeSync(fd); fs.closeSync(fdTxt);
   const secs = (Date.now() - t0) / 1000;
   say(`\n直接模式完成：${done} 局，${secs.toFixed(1)} 秒（${(done / secs).toFixed(2)} 局/秒，平均每局 ${(secs / done).toFixed(2)} 秒）`);
 }
