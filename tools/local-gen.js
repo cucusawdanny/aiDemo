@@ -87,7 +87,7 @@ const ROOT = path.join(__dirname, '..');
 // ---------- --direct 的 worker：不經過伺服器，直接用 sim.js 把整局在這條執行緒上下完 ----------
 if (!isMainThread && workerData && workerData.direct) {
   const Rules = require('../public/rules.js'), {playGame} = require('./sim.js');
-  const {seeds, w, b, budget, cap, openTol, openPlies} = workerData;
+  const {seeds, w, b, budget, cap, openTol, openPlies, run} = workerData;
   const pick = (a, r) => a[Math.floor(r * a.length) % a.length];
   for (const seed of seeds) {
     // 策略與開局亂數由 seed 決定；但 AI 以時間為搜尋上限，所以同一個 seed 不保證走出同一局
@@ -98,7 +98,7 @@ if (!isMainThread && workerData && workerData.direct) {
       onPly: G => { pts = {w: Rules.pts(G, 'w'), b: Rules.pts(G, 'b')};
         left = {w: G.pieces.filter(p => p.side === 'w').length, b: G.pieces.filter(p => p.side === 'b').length}; }});
     parentPort.postMessage({          // 欄位對齊 online-gen.js 的紀錄格式，統計與 --report-only 才能共用
-      id: 'd' + seed, run: 'direct', mode: 'direct', seed, t: new Date(t0).toISOString(), ms: Date.now() - t0,
+      id: (run || 'd') + '-' + seed, run: run || 'direct', mode: 'direct', seed, t: new Date(t0).toISOString(), ms: Date.now() - t0,
       white: {id: 'sim-' + sw, strat: sw}, black: {id: 'sim-' + sb, strat: sb}, room: 'direct',
       over: g.over || null, reason: g.capped ? '步數上限' : (g.reason || 'king'), result: g.result || null,
       capped: g.capped, moves: g.moves, pts, left, actions: g.actions, log: g.hist});
@@ -211,6 +211,7 @@ async function runDirect() {
   say(`直接模式：${games} 局、${jobs} 條執行緒、每手 ${budget}ms、步數上限 ${cap}（不起伺服器、不經過 WebSocket）`);
   say(`白 ${w.join('/')} vs 黑 ${b.join('/')}｜seed ${seed0}…${seed0 + games - 1}\n`);
 
+  const RUN = Date.now().toString(36).slice(-4);   // 每次執行一個代號，不同批次的 id 才不會撞在一起
   const seeds = Array.from({length: games}, (_, i) => seed0 + i);
   const buckets = Array.from({length: jobs}, () => []);
   seeds.forEach((s, i) => buckets[i % jobs].push(s));   // 輪流分配，每條執行緒的工作量差不多
@@ -225,7 +226,7 @@ async function runDirect() {
       + (m.log || []).map((l, i) => `${i + 1}. ${l}`).join('\n') + '\n\n';
   };
   await Promise.all(buckets.map(bucket => new Promise((res, rej) => {
-    const wk = new Worker(__filename, {workerData: {direct: true, seeds: bucket, w, b, budget, cap, openTol, openPlies}});
+    const wk = new Worker(__filename, {workerData: {direct: true, seeds: bucket, w, b, budget, cap, openTol, openPlies, run: RUN}});
     wk.on('message', m => {
       if (m.done) return;
       fs.writeSync(fd, JSON.stringify(m) + '\n');
