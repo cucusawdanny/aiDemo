@@ -22,6 +22,20 @@
      node tools/local-gen.js --games 40 --w medium,advanced --b beginner,medium
    統計會自動把每一種組合分開列出成績。
 
+   ===== 跑太慢、CPU 吃不滿的時候 =====
+   1. 先加 --direct。不加的話是走伺服器，每一手都要 WebSocket 來回，CPU 大半時間在等。
+      實測 2 核、8 局：伺服器模式 18.1 秒（CPU 只用到一半）vs --direct 4.3 秒。
+   2. --jobs 控制同時幾局（--direct 用）。預設＝核心數，通常不用動；
+      開到比核心數還多不會更快（實測 2 核開 4 條反而略慢）。
+      伺服器模式對應的是 --concurrency，這支會自動依核心數設定。
+   3. 最大的成本是 --budget（每手思考毫秒），但只對 advanced／super 有影響，而且幾乎是線性的：
+      實測 super 6 局：budget 30 → 5.4 秒、90 → 14.3 秒、300 → 45.8 秒。
+      beginner／medium 是固定深度，調 budget 幾乎沒差（實測 2.5 秒 vs 2.6 秒）。
+      所以要「大量對局」就把 budget 調小；要「棋力準確」才調大。
+   4. --cap 直接決定最壞情況要走幾手。medium 互打很容易一路打到上限，
+      想快就把 cap 調小，或把雙方強弱拉開（例如 --w super --b beginner）讓對局提早結束。
+   總結：大量資料用 `--direct --budget 30 --cap 120`，要擬真棋力就提高 budget 並接受變慢。
+
    其他常調的：
      --cap <數字>     單局步數上限，超過就算未分勝負。預設 250（--direct 預設 180）。
      --budget <毫秒>  AI 每一手的思考時間。調大＝棋力強但慢。預設 300（--direct 預設 90）。
@@ -258,7 +272,14 @@ async function runDirect() {
   const stop = () => { if (srv && !O['keep-server']) { try { srv.kill(); } catch (e) {} srv = null; } };
   process.on('SIGINT', () => { stop(); process.exit(130); });
 
-  const args = ['tools/online-gen.js', '--url', url, '--games', String(O.games), '--out', OUT, ...REST];
+  // online-gen.js 的 --concurrency 預設只有 2（為了不打爆線上網站），本機沒這個顧慮：
+  // 預設 2 的時候大部分時間都卡在 WebSocket 來回、CPU 閒著，所以這裡改成跟著核心數走。
+  // 伺服器模式是「等網路」而不是「吃 CPU」，所以同時局數要開得比核心數多才填得滿，
+  // 這裡取核心數的 4 倍（上限 16），實測 2 核跑 8 局：concurrency 2 → 18.1 秒、8 → 8.6 秒。
+  const conc = REST.includes('--concurrency') ? null : Math.max(2, Math.min(os.cpus().length * 4, 16, +O.games));
+  if (conc) say(`（未指定 --concurrency，依 ${os.cpus().length} 核自動設為 ${conc}；online-gen 預設的 2 會讓 CPU 大半時間閒等 WebSocket）`);
+  const args = ['tools/online-gen.js', '--url', url, '--games', String(O.games), '--out', OUT,
+    ...(conc ? ['--concurrency', String(conc)] : []), ...REST];
   say(`生成對局：node ${args.join(' ')}\n`);
   const t0 = Date.now();
   const r = await run(process.execPath, args, {quiet: O.quiet});
