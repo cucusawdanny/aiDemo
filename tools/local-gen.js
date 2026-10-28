@@ -53,6 +53,12 @@
      --budget <毫秒>  AI 每一手的思考時間。調大＝棋力強但慢。預設 300（--direct 預設 90）。
      --out <檔名>     輸出檔位置。預設 local-runs/games.jsonl。
      --fresh          先清掉舊的輸出檔，不要接在後面。
+     --stale-cut <N>  連續 N 手沒有任何吃子就提早結束這一局（只有 --direct 支援）。
+                      用來省生成時間，但「不是免費的」：安靜一段之後仍可能再爆發吃子，
+                      所以調小等於提早判定了一些還沒死的局面。
+                      實測 12 局 medium 互打：N=40 平均手數 200→69（24.7 秒→8.5 秒，快約 3 倍）；
+                      N=80 只省約 7%（200→186），勝負分布與不開時在誤差內。
+                      要大量產資料就調小，要資料忠實就調大或別用。
    註：上面那份「全部都是 medium vs medium、250 手、10 局」的結果，就是完全沒加參數跑出來的預設值。
 
    大量模擬請加 --direct：完全跳過伺服器與 WebSocket，直接用 tools/sim.js 在多條執行緒上對弈，
@@ -87,28 +93,28 @@ const ROOT = path.join(__dirname, '..');
 // ---------- --direct 的 worker：不經過伺服器，直接用 sim.js 把整局在這條執行緒上下完 ----------
 if (!isMainThread && workerData && workerData.direct) {
   const Rules = require('../public/rules.js'), {playGame} = require('./sim.js');
-  const {seeds, w, b, budget, cap, openTol, openPlies, run} = workerData;
+  const {seeds, w, b, budget, cap, openTol, openPlies, run, staleCut} = workerData;
   const pick = (a, r) => a[Math.floor(r * a.length) % a.length];
   for (const seed of seeds) {
     // 策略與開局亂數由 seed 決定；但 AI 以時間為搜尋上限，所以同一個 seed 不保證走出同一局
     const r0 = ((seed * 2654435761) % 4294967296) / 4294967296, r1 = ((seed * 1597334677) % 4294967296) / 4294967296;
     const sw = pick(w, r0), sb = pick(b, r1), t0 = Date.now();
     let pts = {w: 0, b: 0}, left = {w: 0, b: 0};
-    const g = playGame({seed, w: sw, b: sb, bw: budget, bb: budget, moveCap: cap, openTol, openPlies,
+    const g = playGame({seed, w: sw, b: sb, bw: budget, bb: budget, moveCap: cap, openTol, openPlies, staleCut,
       onPly: G => { pts = {w: Rules.pts(G, 'w'), b: Rules.pts(G, 'b')};
         left = {w: G.pieces.filter(p => p.side === 'w').length, b: G.pieces.filter(p => p.side === 'b').length}; }});
     parentPort.postMessage({          // 欄位對齊 online-gen.js 的紀錄格式，統計與 --report-only 才能共用
       id: (run || 'd') + '-' + seed, run: run || 'direct', mode: 'direct', seed, t: new Date(t0).toISOString(), ms: Date.now() - t0,
       white: {id: 'sim-' + sw, strat: sw}, black: {id: 'sim-' + sb, strat: sb}, room: 'direct',
-      over: g.over || null, reason: g.capped ? '步數上限' : (g.reason || 'king'), result: g.result || null,
-      capped: g.capped, moves: g.moves, pts, left, actions: g.actions, log: g.hist});
+      over: g.over || null, reason: g.stale ? '停滯中止' : (g.capped ? '步數上限' : (g.reason || 'king')), result: g.result || null,
+      capped: g.capped, moves: g.moves, stale: !!g.stale, pts, left, actions: g.actions, log: g.hist});
   }
   parentPort.postMessage({done: true});
   return;
 }
 // 自己手動掃 argv：這支認得的參數吃掉，其餘「原封不動」轉給 online-gen.js。
 // （不能用 parseArgs 的 strict:false 來做，它會把不認得的 --w medium 當成布林旗標＋位置參數，順序就亂了。）
-const TAKES_VALUE = new Set(['port', 'games', 'out', 'bot-delay', 'jobs', 'seed']);
+const TAKES_VALUE = new Set(['port', 'games', 'out', 'bot-delay', 'jobs', 'seed', 'stale-cut']);
 const FLAGS = new Set(['test', 'reuse', 'keep-server', 'report-only', 'fresh', 'quiet', 'help', 'direct']);
 const O = {games: '10', out: 'local-runs/games.jsonl', 'bot-delay': '0'}, REST = [];
 for (const argv = process.argv.slice(2), it = argv[Symbol.iterator](); ; ) {
@@ -226,7 +232,7 @@ async function runDirect() {
       + (m.log || []).map((l, i) => `${i + 1}. ${l}`).join('\n') + '\n\n';
   };
   await Promise.all(buckets.map(bucket => new Promise((res, rej) => {
-    const wk = new Worker(__filename, {workerData: {direct: true, seeds: bucket, w, b, budget, cap, openTol, openPlies, run: RUN}});
+    const wk = new Worker(__filename, {workerData: {direct: true, seeds: bucket, w, b, budget, cap, openTol, openPlies, run: RUN, staleCut: +O['stale-cut'] || 0}});
     wk.on('message', m => {
       if (m.done) return;
       fs.writeSync(fd, JSON.stringify(m) + '\n');
