@@ -27,7 +27,11 @@
       實測 2 核、8 局：伺服器模式 18.1 秒（CPU 只用到一半）vs --direct 4.3 秒。
    2. --jobs 控制同時幾局（--direct 用）。預設＝核心數，通常不用動；
       開到比核心數還多不會更快（實測 2 核開 4 條反而略慢）。
-      伺服器模式對應的是 --concurrency，這支會自動依核心數設定。
+      伺服器模式對應的是 --concurrency，這支會自動設為核心數的 4 倍。
+      但要注意：伺服器模式的上限其實是「一顆核心」—— online-gen.js 是單一行程、AI 思考是同步的，
+      實測 concurrency 開到 64，user/wall 仍然只有 0.95（＝只吃滿一顆核）。
+      所以 10 核、20 執行緒的機器跑伺服器模式，也只會用到大約 1～2 顆核心的量；
+      想真正把多核吃滿，只有 --direct 這條路（它是多執行緒，--jobs 預設就等於核心數）。
    3. 最大的成本是 --budget（每手思考毫秒），但只對 advanced／super 有影響，而且幾乎是線性的：
       實測 super 6 局：budget 30 → 5.4 秒、90 → 14.3 秒、300 → 45.8 秒。
       beginner／medium 是固定深度，調 budget 幾乎沒差（實測 2.5 秒 vs 2.6 秒）。
@@ -275,8 +279,10 @@ async function runDirect() {
   // online-gen.js 的 --concurrency 預設只有 2（為了不打爆線上網站），本機沒這個顧慮：
   // 預設 2 的時候大部分時間都卡在 WebSocket 來回、CPU 閒著，所以這裡改成跟著核心數走。
   // 伺服器模式是「等網路」而不是「吃 CPU」，所以同時局數要開得比核心數多才填得滿，
-  // 這裡取核心數的 4 倍（上限 16），實測 2 核跑 8 局：concurrency 2 → 18.1 秒、8 → 8.6 秒。
-  const conc = REST.includes('--concurrency') ? null : Math.max(2, Math.min(os.cpus().length * 4, 16, +O.games));
+  // 這裡取核心數的 4 倍（不設上限），實測 2 核跑 8 局：concurrency 2 → 18.1 秒、8 → 8.6 秒。
+  // 注意 online-gen.js 是「單一行程」，AI 思考是同步的：並行度拉高只能把等網路的時間疊起來，
+  // 一旦 CPU 吃滿就不會再快（甚至變慢）。真的要靠核心數擴充請用 --direct，那邊才是多執行緒。
+  const conc = REST.includes('--concurrency') ? null : Math.max(2, Math.min(os.cpus().length * 4, +O.games));
   if (conc) say(`（未指定 --concurrency，依 ${os.cpus().length} 核自動設為 ${conc}；online-gen 預設的 2 會讓 CPU 大半時間閒等 WebSocket）`);
   const args = ['tools/online-gen.js', '--url', url, '--games', String(O.games), '--out', OUT,
     ...(conc ? ['--concurrency', String(conc)] : []), ...REST];
